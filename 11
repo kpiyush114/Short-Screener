@@ -1,0 +1,352 @@
+//@version=4
+study("Screener Short 1.1", overlay = false)
+// first script settings
+i_EMA_OBV = input(title = "OBV EMA Length ", defval = 21, minval=1)
+i_Low_lookback = input(title = "OBV Low Look back",defval =  50, minval=1)
+
+// second script settings
+smaLength = input(defval=20, title="SMA Length:") 
+src = input(defval=hlc3, type=input.source, title="SMA source:") 
+val = input(0, title = "Trigger value")
+
+// third script settings
+i_Low_lookback3 = input(title = "Price Low Look back",defval =  50, minval=1)
+
+// Fourth Script Settings
+src1 = input(defval=close, type=input.source, title="src1 - Close") 
+src2 = input(defval=high, type=input.source, title="src2 - High") 
+src3 = input(defval=low, type=input.source, title="src3 - Low") 
+
+// Fifth Script Settings
+len = input(title="Length", defval=14)
+th = input(title="threshold", defval=20)
+th2 = input(title="thresholdOver", defval=50)
+emaADX = input(title="ADXExponentialMovingAverage", defval=5)
+
+LongSignalFunc() => 
+    false
+    
+
+ShortSignalFunc() => 
+    // https://in.tradingview.com/script/0wqIqGup-OBV-High-LOW-On-Balance-Volume/
+    _obv_l = lowest(obv,i_Low_lookback)[1]
+    first = obv <= _obv_l
+
+    // https://in.tradingview.com/script/FsxCDGWG-SMA-Imbalance-Oscillator/
+    sma = sma(src, smaLength) 
+
+    pricePoint = iff(low > sma, high, iff(high < sma, low, iff(high - sma > sma - low, high, low))) 
+    difference = abs(pricePoint - sma) 
+
+    differenceTotal = 0.00000 
+    differenceTotal := nz(differenceTotal[1]) + difference 
+
+    totalCount = 0 
+    totalCount := nz(totalCount[1]) + 1 
+
+    avgDistance = differenceTotal / totalCount 
+    Imbalance = difference - avgDistance
+    second = (Imbalance < avgDistance*2) and (volume > volume[1])
+    
+    // script from source (third, in TG)
+    PV=low
+    ChangePV=cum(PV-PV[1])
+    Price_L = highest(ChangePV,i_Low_lookback)[1]
+    third = (ChangePV <= Price_L) and (ChangePV[1] > Price_L)
+    
+    // Fourth Condition
+    fourth = (src1 > src3) //and (((abs((src2-src3)/src3))*100) < 0.5)
+    
+    // Fifth Condition
+    TrueRange = max(max(high-low, abs(high-nz(close[1]))), abs(low-nz(close[1])))
+    DirectionalMovementPlus = high-nz(high[1]) > nz(low[1])-low ? max(high-nz(high[1]), 0): 0
+    DirectionalMovementMinus = nz(low[1])-low > high-nz(high[1]) ? max(nz(low[1])-low, 0): 0
+    SmoothedTrueRange = 0.0
+    SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1])/len) + TrueRange
+    SmoothedDirectionalMovementPlus = 0.0
+    SmoothedDirectionalMovementPlus := nz(SmoothedDirectionalMovementPlus[1]) - (nz(SmoothedDirectionalMovementPlus[1])/len) + DirectionalMovementPlus
+    SmoothedDirectionalMovementMinus = 0.0
+    SmoothedDirectionalMovementMinus := nz(SmoothedDirectionalMovementMinus[1]) - (nz(SmoothedDirectionalMovementMinus[1])/len) + DirectionalMovementMinus
+    DIPlus = SmoothedDirectionalMovementPlus / SmoothedTrueRange * 100
+    DIMinus = SmoothedDirectionalMovementMinus / SmoothedTrueRange * 100
+    DX = abs(DIPlus-DIMinus) / (DIPlus+DIMinus)*100
+    ADX = sma(DX, len)
+    ADXEMA = ema(ADX, emaADX)
+    Diff = (ADX-ADXEMA)*2
+    fifth = (ADX > ADXEMA) and (Diff > 3 and DIMinus > th and DIPlus < th and ADX > th) //and (Diff > Diff[1])
+
+    first and second and third and fourth and fifth
+
+SignalFunc() =>
+    [LongSignalFunc(), ShortSignalFunc()]
+
+ProcessTicker(triggeredLong, triggeredShort, ticker) =>
+    _scrLabelLong = ""
+    _scrLabelShort = triggeredShort and ticker != ""? ticker + "\n" : ""
+    [_scrLabelLong, _scrLabelShort]
+
+
+scrLabelLong = ''
+scrLabelShort = ''
+
+ticker1 = input(defval = "NSE:DABUR", title = "Ticker 1", type = input.symbol)
+[triggered1Long, triggered1Short] = security(ticker1, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong1, scrLabelShort1] = ProcessTicker(triggered1Long, triggered1Short, ticker1)
+scrLabelLong := scrLabelLong + scrLabelLong1
+scrLabelShort := scrLabelShort + scrLabelShort1
+
+ticker2 = input(defval = "NSE:DEEPAKNTR", title = "Ticker 2", type = input.symbol)
+[triggered2Long, triggered2Short] = security(ticker2, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong2, scrLabelShort2] = ProcessTicker(triggered2Long, triggered2Short, ticker2)
+scrLabelLong := scrLabelLong + scrLabelLong2
+scrLabelShort := scrLabelShort + scrLabelShort2
+
+ticker3 = input(defval = "NSE:DIVISLAB", title = "Ticker 3", type = input.symbol)
+[triggered3Long, triggered3Short] = security(ticker3, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong3, scrLabelShort3] = ProcessTicker(triggered3Long, triggered3Short, ticker3)
+scrLabelLong := scrLabelLong + scrLabelLong3
+scrLabelShort := scrLabelShort + scrLabelShort3
+
+ticker4 = input(defval = "NSE:DLF", title = "Ticker 4", type = input.symbol)
+[triggered4Long, triggered4Short] = security(ticker4, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong4, scrLabelShort4] = ProcessTicker(triggered4Long, triggered4Short, ticker4)
+scrLabelLong := scrLabelLong + scrLabelLong4
+scrLabelShort := scrLabelShort + scrLabelShort4
+
+ticker5 = input(defval = "NSE:DRREDDY", title = "Ticker 5", type = input.symbol)
+[triggered5Long, triggered5Short] = security(ticker5, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong5, scrLabelShort5] = ProcessTicker(triggered5Long, triggered5Short, ticker5)
+scrLabelLong := scrLabelLong + scrLabelLong5
+scrLabelShort := scrLabelShort + scrLabelShort5
+
+ticker6 = input(defval = "NSE:EICHERMOT", title = "Ticker 6", type = input.symbol)
+[triggered6Long, triggered6Short] = security(ticker6, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong6, scrLabelShort6] = ProcessTicker(triggered6Long, triggered6Short, ticker6)
+scrLabelLong := scrLabelLong + scrLabelLong6
+scrLabelShort := scrLabelShort + scrLabelShort6
+
+ticker7 = input(defval = "NSE:ESCORTS", title = "Ticker 7", type = input.symbol)
+[triggered7Long, triggered7Short] = security(ticker7, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong7, scrLabelShort7] = ProcessTicker(triggered7Long, triggered7Short, ticker7)
+scrLabelLong := scrLabelLong + scrLabelLong7
+scrLabelShort := scrLabelShort + scrLabelShort7
+
+ticker8 = input(defval = "NSE:EXIDEIND", title = "Ticker 8", type = input.symbol)
+[triggered8Long, triggered8Short] = security(ticker8, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong8, scrLabelShort8] = ProcessTicker(triggered8Long, triggered8Short, ticker8)
+scrLabelLong := scrLabelLong + scrLabelLong8
+scrLabelShort := scrLabelShort + scrLabelShort8
+
+ticker9 = input(defval = "NSE:FEDERALBNK", title = "Ticker 9", type = input.symbol)
+[triggered9Long, triggered9Short] = security(ticker9, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong9, scrLabelShort9] = ProcessTicker(triggered9Long, triggered9Short, ticker9)
+scrLabelLong := scrLabelLong + scrLabelLong9
+scrLabelShort := scrLabelShort + scrLabelShort9
+
+ticker10 = input(defval = "NSE:GAIL", title = "Ticker 10", type = input.symbol)
+[triggered10Long, triggered10Short] = security(ticker10, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong10, scrLabelShort10] = ProcessTicker(triggered10Long, triggered10Short, ticker10)
+scrLabelLong := scrLabelLong + scrLabelLong10
+scrLabelShort := scrLabelShort + scrLabelShort10
+
+ticker11 = input(defval = "NSE:GLENMARK", title = "Ticker 11", type = input.symbol)
+[triggered11Long, triggered11Short] = security(ticker11, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong11, scrLabelShort11] = ProcessTicker(triggered11Long, triggered11Short, ticker11)
+scrLabelLong := scrLabelLong + scrLabelLong11
+scrLabelShort := scrLabelShort + scrLabelShort11
+
+ticker12 = input(defval = "NSE:GODREJCP", title = "Ticker 12", type = input.symbol)
+[triggered12Long, triggered12Short] = security(ticker12, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong12, scrLabelShort12] = ProcessTicker(triggered12Long, triggered12Short, ticker12)
+scrLabelLong := scrLabelLong + scrLabelLong12
+scrLabelShort := scrLabelShort + scrLabelShort12
+
+ticker13 = input(defval = "NSE:GODREJPROP", title = "Ticker 13", type = input.symbol)
+[triggered13Long, triggered13Short] = security(ticker13, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong13, scrLabelShort13] = ProcessTicker(triggered13Long, triggered13Short, ticker13)
+scrLabelLong := scrLabelLong + scrLabelLong13
+scrLabelShort := scrLabelShort + scrLabelShort13
+
+ticker14 = input(defval = "NSE:GRANULES", title = "Ticker 14", type = input.symbol)
+[triggered14Long, triggered14Short] = security(ticker14, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong14, scrLabelShort14] = ProcessTicker(triggered14Long, triggered14Short, ticker14)
+scrLabelLong := scrLabelLong + scrLabelLong14
+scrLabelShort := scrLabelShort + scrLabelShort14
+
+ticker15 = input(defval = "NSE:GRASIM", title = "Ticker 15", type = input.symbol)
+[triggered15Long, triggered15Short] = security(ticker15, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong15, scrLabelShort15] = ProcessTicker(triggered15Long, triggered15Short, ticker15)
+scrLabelLong := scrLabelLong + scrLabelLong15
+scrLabelShort := scrLabelShort + scrLabelShort15
+
+ticker16 = input(defval = "NSE:GUJGASLTD", title = "Ticker 16", type = input.symbol)
+[triggered16Long, triggered16Short] = security(ticker16, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong16, scrLabelShort16] = ProcessTicker(triggered16Long, triggered16Short, ticker16)
+scrLabelLong := scrLabelLong + scrLabelLong16
+scrLabelShort := scrLabelShort + scrLabelShort16
+
+ticker17 = input(defval = "NSE:HAVELLS", title = "Ticker 17", type = input.symbol)
+[triggered17Long, triggered17Short] = security(ticker17, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong17, scrLabelShort17] = ProcessTicker(triggered17Long, triggered17Short, ticker17)
+scrLabelLong := scrLabelLong + scrLabelLong17
+scrLabelShort := scrLabelShort + scrLabelShort17
+
+ticker18 = input(defval = "NSE:HCLTECH", title = "Ticker 18", type = input.symbol)
+[triggered18Long, triggered18Short] = security(ticker18, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong18, scrLabelShort18] = ProcessTicker(triggered18Long, triggered18Short, ticker18)
+scrLabelLong := scrLabelLong + scrLabelLong18
+scrLabelShort := scrLabelShort + scrLabelShort18
+
+ticker19 = input(defval = "NSE:HDFC", title = "Ticker 19", type = input.symbol)
+[triggered19Long, triggered19Short] = security(ticker19, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong19, scrLabelShort19] = ProcessTicker(triggered19Long, triggered19Short, ticker19)
+scrLabelLong := scrLabelLong + scrLabelLong19
+scrLabelShort := scrLabelShort + scrLabelShort19
+
+ticker20 = input(defval = "NSE:HDFCAMC", title = "Ticker 20", type = input.symbol)
+[triggered20Long, triggered20Short] = security(ticker20, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong20, scrLabelShort20] = ProcessTicker(triggered20Long, triggered20Short, ticker20)
+scrLabelLong := scrLabelLong + scrLabelLong20
+scrLabelShort := scrLabelShort + scrLabelShort20
+
+ticker21 = input(defval = "NSE:HDFCBANK", title = "Ticker 21", type = input.symbol)
+[triggered21Long, triggered21Short] = security(ticker21, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong21, scrLabelShort21] = ProcessTicker(triggered21Long, triggered21Short, ticker21)
+scrLabelLong := scrLabelLong + scrLabelLong21
+scrLabelShort := scrLabelShort + scrLabelShort21
+
+ticker22 = input(defval = "NSE:HDFCLIFE", title = "Ticker 22", type = input.symbol)
+[triggered22Long, triggered22Short] = security(ticker22, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong22, scrLabelShort22] = ProcessTicker(triggered22Long, triggered22Short, ticker22)
+scrLabelLong := scrLabelLong + scrLabelLong22
+scrLabelShort := scrLabelShort + scrLabelShort22
+
+ticker23 = input(defval = "NSE:HEROMOTOCO", title = "Ticker 23", type = input.symbol)
+[triggered23Long, triggered23Short] = security(ticker23, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong23, scrLabelShort23] = ProcessTicker(triggered23Long, triggered23Short, ticker23)
+scrLabelLong := scrLabelLong + scrLabelLong23
+scrLabelShort := scrLabelShort + scrLabelShort23
+
+ticker24 = input(defval = "NSE:HINDALCO", title = "Ticker 24", type = input.symbol)
+[triggered24Long, triggered24Short] = security(ticker24, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong24, scrLabelShort24] = ProcessTicker(triggered24Long, triggered24Short, ticker24)
+scrLabelLong := scrLabelLong + scrLabelLong24
+scrLabelShort := scrLabelShort + scrLabelShort24
+
+ticker25 = input(defval = "NSE:HINDPETRO", title = "Ticker 25", type = input.symbol)
+[triggered25Long, triggered25Short] = security(ticker25, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong25, scrLabelShort25] = ProcessTicker(triggered25Long, triggered25Short, ticker25)
+scrLabelLong := scrLabelLong + scrLabelLong25
+scrLabelShort := scrLabelShort + scrLabelShort25
+
+ticker26 = input(defval = "NSE:HINDUNILVR", title = "Ticker 26", type = input.symbol)
+[triggered26Long, triggered26Short] = security(ticker26, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong26, scrLabelShort26] = ProcessTicker(triggered26Long, triggered26Short, ticker26)
+scrLabelLong := scrLabelLong + scrLabelLong26
+scrLabelShort := scrLabelShort + scrLabelShort26
+
+ticker27 = input(defval = "NSE:IBULHSGFIN", title = "Ticker 27", type = input.symbol)
+[triggered27Long, triggered27Short] = security(ticker27, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong27, scrLabelShort27] = ProcessTicker(triggered27Long, triggered27Short, ticker27)
+scrLabelLong := scrLabelLong + scrLabelLong27
+scrLabelShort := scrLabelShort + scrLabelShort27
+
+ticker28 = input(defval = "NSE:ICICIBANK", title = "Ticker 28", type = input.symbol)
+[triggered28Long, triggered28Short] = security(ticker28, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong28, scrLabelShort28] = ProcessTicker(triggered28Long, triggered28Short, ticker28)
+scrLabelLong := scrLabelLong + scrLabelLong28
+scrLabelShort := scrLabelShort + scrLabelShort28
+
+ticker29 = input(defval = "NSE:ICICIGI", title = "Ticker 29", type = input.symbol)
+[triggered29Long, triggered29Short] = security(ticker29, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong29, scrLabelShort29] = ProcessTicker(triggered29Long, triggered29Short, ticker29)
+scrLabelLong := scrLabelLong + scrLabelLong29
+scrLabelShort := scrLabelShort + scrLabelShort29
+
+ticker30 = input(defval = "NSE:ICICIPRULI", title = "Ticker 30", type = input.symbol)
+[triggered30Long, triggered30Short] = security(ticker30, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong30, scrLabelShort30] = ProcessTicker(triggered30Long, triggered30Short, ticker30)
+scrLabelLong := scrLabelLong + scrLabelLong30
+scrLabelShort := scrLabelShort + scrLabelShort30
+
+ticker31 = input(defval = "NSE:IGL", title = "Ticker 31", type = input.symbol)
+[triggered31Long, triggered31Short] = security(ticker31, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong31, scrLabelShort31] = ProcessTicker(triggered31Long, triggered31Short, ticker31)
+scrLabelLong := scrLabelLong + scrLabelLong31
+scrLabelShort := scrLabelShort + scrLabelShort31
+
+ticker32 = input(defval = "NSE:INDIGO", title = "Ticker 32", type = input.symbol)
+[triggered32Long, triggered32Short] = security(ticker32, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong32, scrLabelShort32] = ProcessTicker(triggered32Long, triggered32Short, ticker32)
+scrLabelLong := scrLabelLong + scrLabelLong32
+scrLabelShort := scrLabelShort + scrLabelShort32
+
+ticker33 = input(defval = "NSE:INDUSINDBK", title = "Ticker 33", type = input.symbol)
+[triggered33Long, triggered33Short] = security(ticker33, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong33, scrLabelShort33] = ProcessTicker(triggered33Long, triggered33Short, ticker33)
+scrLabelLong := scrLabelLong + scrLabelLong33
+scrLabelShort := scrLabelShort + scrLabelShort33
+
+ticker34 = input(defval = "NSE:INDUSTOWER", title = "Ticker 34", type = input.symbol)
+[triggered34Long, triggered34Short] = security(ticker34, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong34, scrLabelShort34] = ProcessTicker(triggered34Long, triggered34Short, ticker34)
+scrLabelLong := scrLabelLong + scrLabelLong34
+scrLabelShort := scrLabelShort + scrLabelShort34
+
+ticker35 = input(defval = "NSE:INFY", title = "Ticker 35", type = input.symbol)
+[triggered35Long, triggered35Short] = security(ticker35, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong35, scrLabelShort35] = ProcessTicker(triggered35Long, triggered35Short, ticker35)
+scrLabelLong := scrLabelLong + scrLabelLong35
+scrLabelShort := scrLabelShort + scrLabelShort35
+
+ticker36 = input(defval = "NSE:IOC", title = "Ticker 36", type = input.symbol)
+[triggered36Long, triggered36Short] = security(ticker36, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong36, scrLabelShort36] = ProcessTicker(triggered36Long, triggered36Short, ticker36)
+scrLabelLong := scrLabelLong + scrLabelLong36
+scrLabelShort := scrLabelShort + scrLabelShort36
+
+ticker37 = input(defval = "NSE:IRCTC", title = "Ticker 37", type = input.symbol)
+[triggered37Long, triggered37Short] = security(ticker37, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong37, scrLabelShort37] = ProcessTicker(triggered37Long, triggered37Short, ticker37)
+scrLabelLong := scrLabelLong + scrLabelLong37
+scrLabelShort := scrLabelShort + scrLabelShort37
+
+ticker38 = input(defval = "NSE:ITC", title = "Ticker 38", type = input.symbol)
+[triggered38Long, triggered38Short] = security(ticker38, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong38, scrLabelShort38] = ProcessTicker(triggered38Long, triggered38Short, ticker38)
+scrLabelLong := scrLabelLong + scrLabelLong38
+scrLabelShort := scrLabelShort + scrLabelShort38
+
+ticker39 = input(defval = "NSE:JINDALSTEL", title = "Ticker 39", type = input.symbol)
+[triggered39Long, triggered39Short] = security(ticker39, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong39, scrLabelShort39] = ProcessTicker(triggered39Long, triggered39Short, ticker39)
+scrLabelLong := scrLabelLong + scrLabelLong39
+scrLabelShort := scrLabelShort + scrLabelShort39
+
+ticker40 = input(defval = "NSE:JSWSTEEL", title = "Ticker 40", type = input.symbol)
+[triggered40Long, triggered40Short] = security(ticker40, timeframe.period, SignalFunc(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[scrLabelLong40, scrLabelShort40] = ProcessTicker(triggered40Long, triggered40Short, ticker40)
+scrLabelLong := scrLabelLong + scrLabelLong40
+scrLabelShort := scrLabelShort + scrLabelShort40
+
+alertcondition(scrLabelShort != "", "Short alert", "Something has triggered")
+//alertcondition(scrLabelShort != "", "Short alert", "Something has triggered")
+//alertcondition(scrLabelLong != "" or scrLabelShort != "", "Long and Short alerts", "Something has triggered")
+
+if (scrLabelShort != "")
+    label.new(
+         bar_index, bar_index % 100 * 20, scrLabelShort, 
+         color = color.red, 
+         textcolor = color.white, 
+         style = label.style_labeldown,
+         yloc = yloc.price)
+    alert("Short: \n" + scrLabelShort, alert.freq_once_per_bar_close)
+
+//if (scrLabelShort != "")
+//    label.new(
+//         bar_index, 0, scrLabelShort, 
+//         color = color.red, 
+//         textcolor = color.white, 
+//         style = label.style_labeldown,
+//         yloc = yloc.price)
+//    alert("Short: \n" + scrLabelShort, alert.freq_once_per_bar_close)
